@@ -4,6 +4,8 @@ const LINK_PREFIX = "https://tarife.mediamarkt.de/tarife/pks/";
 const state = {
   headers: [],
   rows: [],
+  sortColumn: -1,
+  sortDirection: "asc",
 };
 
 const reloadCsvBtn = document.getElementById("reloadCsvBtn");
@@ -84,6 +86,77 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function normalizeSortValue(value) {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return { empty: true, isNumber: false, value: "" };
+  }
+
+  const numericCandidate = text.includes(",") && !text.includes(".")
+    ? text.replace(",", ".")
+    : text;
+  const parsedNumber = Number(numericCandidate);
+
+  if (!Number.isNaN(parsedNumber) && Number.isFinite(parsedNumber)) {
+    return { empty: false, isNumber: true, value: parsedNumber };
+  }
+
+  return { empty: false, isNumber: false, value: text.toLowerCase() };
+}
+
+function compareRowsByColumn(rowA, rowB, columnIndex, direction) {
+  const valueA = normalizeSortValue(rowA[columnIndex]);
+  const valueB = normalizeSortValue(rowB[columnIndex]);
+
+  if (valueA.empty && !valueB.empty) {
+    return 1;
+  }
+  if (!valueA.empty && valueB.empty) {
+    return -1;
+  }
+
+  let result = 0;
+  if (valueA.isNumber && valueB.isNumber) {
+    result = valueA.value - valueB.value;
+  } else {
+    result = String(valueA.value).localeCompare(String(valueB.value), "de", {
+      numeric: true,
+      sensitivity: "base",
+    });
+  }
+
+  return direction === "asc" ? result : -result;
+}
+
+function getDisplayedRows() {
+  if (state.sortColumn < 0 || state.sortColumn >= state.headers.length) {
+    return state.rows;
+  }
+
+  return state.rows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const cmp = compareRowsByColumn(left.row, right.row, state.sortColumn, state.sortDirection);
+      if (cmp !== 0) {
+        return cmp;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.row);
+}
+
+function toggleSort(columnIndex) {
+  if (state.sortColumn === columnIndex) {
+    state.sortDirection = state.sortDirection === "asc" ? "desc" : "asc";
+  } else {
+    state.sortColumn = columnIndex;
+    state.sortDirection = "asc";
+  }
+
+  renderTable();
+  updateDownloadHref();
+}
+
 function renderTable() {
   if (!state.headers.length) {
     tableHead.innerHTML = "";
@@ -91,9 +164,23 @@ function renderTable() {
     return;
   }
 
-  tableHead.innerHTML = `<tr>${state.headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr>`;
+  const displayedRows = getDisplayedRows();
 
-  tableBody.innerHTML = state.rows
+  tableHead.innerHTML = `<tr>${state.headers.map((header, index) => {
+    const isActive = state.sortColumn === index;
+    const indicator = isActive ? (state.sortDirection === "asc" ? " (asc)" : " (desc)") : "";
+    const label = `${header}${indicator}`;
+    return `<th><button type="button" class="sort-btn${isActive ? " is-active" : ""}" data-sort-index="${index}">${escapeHtml(label)}</button></th>`;
+  }).join("")}</tr>`;
+
+  tableHead.querySelectorAll(".sort-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      const columnIndex = Number(button.dataset.sortIndex);
+      toggleSort(columnIndex);
+    });
+  });
+
+  tableBody.innerHTML = displayedRows
     .map((row) => {
       const cells = state.headers.map((_, index) => {
         const value = row[index] || "";
@@ -126,7 +213,7 @@ function updateDownloadHref() {
     downloadBtn.removeAttribute("href");
     return;
   }
-  const blob = new Blob([buildCsvText(state.headers, state.rows)], { type: "text/csv;charset=utf-8" });
+  const blob = new Blob([buildCsvText(state.headers, getDisplayedRows())], { type: "text/csv;charset=utf-8" });
   downloadBtn.href = URL.createObjectURL(blob);
 }
 
@@ -140,6 +227,8 @@ async function loadLocalCsv() {
   const parsed = parseCsv(csvText);
   state.headers = parsed.headers;
   state.rows = parsed.rows;
+  state.sortColumn = -1;
+  state.sortDirection = "asc";
   renderTable();
   updateDownloadHref();
   setStatus(`CSV geladen: ${state.rows.length} Zeilen.`);
@@ -224,6 +313,8 @@ async function fetchAndOverwrite() {
     "link",
   ];
   state.rows = offers.map(offerToCsvRow);
+  state.sortColumn = -1;
+  state.sortDirection = "asc";
   renderTable();
   updateDownloadHref();
   setStatus(`Fetch erfolgreich: ${state.rows.length} Zeilen. Ansicht wurde ueberschrieben.`);
