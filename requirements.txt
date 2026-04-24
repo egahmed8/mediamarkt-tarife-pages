@@ -1,0 +1,2 @@
+# Keine externen Abhaengigkeiten noetig (nur Python-Standardbibliothek)
+

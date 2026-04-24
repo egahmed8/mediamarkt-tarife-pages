@@ -1,0 +1,18 @@
+image: python:3.11
+
+pages:
+  stage: deploy
+  script:
+    - python script.py
+    - mkdir -p public
+    - cp docs/index.html public/index.html
+    - cp docs/app.js public/app.js
+    - cp docs/styles.css public/styles.css
+    - cp tarife.csv public/tarife.csv
+  artifacts:
+    paths:
+      - public
+  only:
+    - main
+    - master
+
