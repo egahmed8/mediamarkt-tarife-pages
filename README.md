@@ -42,8 +42,9 @@ Features:
 - Button **CSV neu laden**
 - Button **Fetch + Ueberschreiben** (erst aktiv nach Checkbox + bestaetigen)
 - Download-Link, um die aktuelle Ansicht wieder als CSV zu speichern
+- Sortierung per Klick auf Spaltenkoepfe
 
-Hinweis: Der direkte Fetch gegen die MediaMarkt-API kann auf Pages wegen CORS blockiert werden. In dem Fall lokal `python script.py` ausfuehren und neue `tarife.csv` committen.
+Hinweis: Der Fetch-Button probiert auf Pages zuerst direkt und dann CORS-Fallback-Proxys. Das kann funktionieren, ist aber nicht garantiert (Proxy-Limits/Blockaden moeglich). Wenn es fehlschlaegt, lokal `python script.py` ausfuehren und neue `tarife.csv` committen.
 
 ## Lokal testen
 

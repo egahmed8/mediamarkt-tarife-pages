@@ -1,5 +1,19 @@
 const OFFERS_SOURCE_URL = "https://tarife-api2.mediamarkt.de/v1/section/page/tarife?tenant=mediamarkt&environment=production&restUrl=https:%2F%2Ftarife-api2.mediamarkt.de&cdnUrl=https:%2F%2Fcontent.ekontor24.net%2Fmediamarkt";
 const LINK_PREFIX = "https://tarife.mediamarkt.de/tarife/pks/";
+const CORS_FALLBACKS = [
+  {
+    label: "Direkt",
+    buildUrl: (url) => url,
+  },
+  {
+    label: "allorigins",
+    buildUrl: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  },
+  {
+    label: "isomorphic-git proxy",
+    buildUrl: (url) => `https://cors.isomorphic-git.org/${url}`,
+  },
+];
 
 const state = {
   headers: [],
@@ -217,6 +231,32 @@ function updateDownloadHref() {
   downloadBtn.href = URL.createObjectURL(blob);
 }
 
+async function fetchJsonWithFallbacks(baseUrl) {
+  const errors = [];
+
+  for (const fallback of CORS_FALLBACKS) {
+    try {
+      const targetUrl = fallback.buildUrl(baseUrl);
+      const response = await fetch(targetUrl, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      const offers = (((data || {}).payload || {}).offers || []);
+      if (!Array.isArray(offers) || offers.length === 0) {
+        throw new Error("Antwort hat keine Offers");
+      }
+
+      return { data, source: fallback.label };
+    } catch (error) {
+      errors.push(`${fallback.label}: ${error.message}`);
+    }
+  }
+
+  throw new Error(`Alle Fetch-Wege fehlgeschlagen. ${errors.join(" | ")}`);
+}
+
 async function loadLocalCsv() {
   setStatus("Lade tarife.csv...");
   const response = await fetch("./tarife.csv?ts=" + Date.now(), { cache: "no-store" });
@@ -289,12 +329,8 @@ async function fetchAndOverwrite() {
 
   setStatus("Hole aktuelle Daten per Fetch...");
 
-  const response = await fetch(OFFERS_SOURCE_URL, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Fetch fehlgeschlagen (HTTP ${response.status}).`);
-  }
-
-  const data = await response.json();
+  const result = await fetchJsonWithFallbacks(OFFERS_SOURCE_URL);
+  const data = result.data;
   const offers = (((data || {}).payload || {}).offers || []);
   if (!Array.isArray(offers) || offers.length === 0) {
     throw new Error("Keine Offers in der API-Antwort gefunden.");
@@ -317,7 +353,7 @@ async function fetchAndOverwrite() {
   state.sortDirection = "asc";
   renderTable();
   updateDownloadHref();
-  setStatus(`Fetch erfolgreich: ${state.rows.length} Zeilen. Ansicht wurde ueberschrieben.`);
+  setStatus(`Fetch erfolgreich ueber ${result.source}: ${state.rows.length} Zeilen. Ansicht wurde ueberschrieben.`);
 }
 
 function setOverwriteEnabled() {
@@ -338,7 +374,7 @@ fetchOverwriteBtn.addEventListener("click", async () => {
   try {
     await fetchAndOverwrite();
   } catch (error) {
-    setStatus(`${error.message} (CORS moeglich). Dann lokal \"python script.py\" laufen lassen und CSV committen.`, true);
+    setStatus(`${error.message} Wenn das auf Pages passiert, lokal \"python script.py\" laufen lassen und CSV committen.`, true);
   }
 });
 
